@@ -1,8 +1,12 @@
-# Soroban workspace — confidential-token
+# Soroban workspace — Nebula on-chain contracts
 
-Cargo workspace containing the on-chain side of the Confidential Token
-project. See [../README.md](../README.md) for the full picture and
-[../docs/architecture.md](../docs/architecture.md) for the design.
+Cargo workspace containing the on-chain side of **Nebula** (Confidential
+Token on Stellar). See [../README.md](../README.md) for the full picture
+and [../docs/architecture.md](../docs/architecture.md) for the design.
+
+> The crate names (`confidential-token`, `registrar`, `verifier-*`) keep
+> the descriptive identifiers so the on-chain WASMs and Cargo metadata are
+> self-documenting. "Nebula" is the project / product brand.
 
 ## Crates
 

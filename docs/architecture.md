@@ -1,4 +1,4 @@
-# Architecture — Confidential Token on Stellar (Option A)
+# Architecture — Nebula (Confidential Token on Stellar, Option A)
 
 This document distills the design decisions for the Stellar Hacks: Real-World
 ZK hackathon submission. The full upstream plan with diagrams lives in

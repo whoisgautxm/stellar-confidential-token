@@ -1,14 +1,19 @@
-# Confidential Token on Stellar
+# Nebula — Confidential Tokens on Stellar
 
 > **Hackathon submission — Stellar Hacks: Real-World ZK.**
 > Research prototype. Not audited. Testnet only.
 
-A confidential fungible token built on Soroban that hides **balances and
-transfer amounts** while keeping **sender/receiver addresses public** — the
-Stellar Confidential Token model. Reuses the [Avalanche EncryptedERC](https://github.com/ava-labs/EncryptedERC)
-Circom circuits and TypeScript crypto client, with on-chain BabyJubJub
-arithmetic ported to Soroban guest Rust and Groth16 verification done via
-Stellar's BN254 `pairing_check` host functions.
+> *A nebula is a visible cloud on the sky map that obscures the stars inside
+> it — exactly the privacy model here: addresses stay public, balances stay
+> hidden.*
+
+**Nebula** is a confidential fungible token built on Soroban that hides
+**balances and transfer amounts** while keeping **sender/receiver addresses
+public** — the Stellar Confidential Token model. It reuses the
+[Avalanche EncryptedERC](https://github.com/ava-labs/EncryptedERC) Circom
+circuits and TypeScript crypto client, with on-chain BabyJubJub arithmetic
+ported to Soroban guest Rust and Groth16 verification done via Stellar's
+BN254 `pairing_check` host functions.
 
 The full converter round-trip — register / deposit / private transfer /
 withdraw — runs end-to-end on Stellar testnet today. See

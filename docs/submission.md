@@ -1,8 +1,13 @@
 # Hackathon submission notes
 
-**Project:** Confidential Token on Stellar
+**Project:** Nebula — Confidential Tokens on Stellar
 **Track:** Stellar Hacks: Real-World ZK
 **Status:** Research prototype, testnet only, not audited.
+
+> *Why "Nebula"?* A nebula is the only thing on a star map that's
+> *publicly visible yet internally opaque* — you can see exactly where it
+> is, but you can't see the individual stars inside. That's the project's
+> security model in one image: public sender/receiver, hidden balances.
 
 ## One-line pitch
 

@@ -1,7 +1,8 @@
-# Testnet deployment guide
+# Nebula — testnet deployment guide
 
-Step-by-step for deploying the Confidential Token stack to Stellar testnet
-and running the full register → deposit → transfer → withdraw flow end-to-end.
+Step-by-step for deploying the Nebula confidential-token stack to Stellar
+testnet and running the full register → deposit → transfer → withdraw flow
+end-to-end.
 
 ## Prerequisites
 

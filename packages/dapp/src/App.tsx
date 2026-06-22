@@ -148,8 +148,10 @@ export function App() {
 
   return (
     <div style={{ maxWidth: 920, margin: "40px auto", padding: 24 }}>
-      <h1 style={{ marginTop: 0 }}>Confidential Token — Stellar</h1>
-      <p style={{ opacity: 0.7 }}>
+      <h1 style={{ marginTop: 0, letterSpacing: -0.5 }}>
+        Nebula <span style={{ opacity: 0.45, fontWeight: 400 }}>— Confidential Tokens on Stellar</span>
+      </h1>
+      <p style={{ opacity: 0.7, marginTop: 0 }}>
         Encrypted balances, public sender/receiver, ZK-proven private
         transfers and withdraws. Testnet only — not audited.
       </p>
@@ -215,8 +217,8 @@ export function App() {
       </Section>
 
       <footer style={{ opacity: 0.5, fontSize: 12, marginTop: 24 }}>
-        Hackathon prototype. dApp ↔ Soroban via Freighter; circuits served
-        from {`/circuits/*`}. Source: {" "}
+        Nebula — hackathon prototype. dApp ↔ Soroban via Freighter; circuits
+        served from {`/circuits/*`}. Source: {" "}
         <a href="https://github.com/whoisgautxm/stellar-confidential-token" target="_blank" rel="noreferrer">
           repo
         </a>
