@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { jub } from "@confidential-token/sdk";
 import type { StellarWalletsKit } from "@creit.tech/stellar-wallets-kit";
 import { cfg } from "./lib/config.js";
+import { changeTrust } from "./lib/classic.js";
 import { deriveBjjSeed, getKit, makeWalletSigner } from "./lib/wallet.js";
 import {
   type SenderKeypair,
@@ -24,52 +25,126 @@ export function App() {
   const sign = useMemo(() => makeWalletSigner(kit), [kit]);
 
   const [address, setAddress] = useState<string | null>(null);
-  const [kp, setKp] = useState<SenderKeypair | null>(null);
   const [tab, setTab] = useState<Tab>("register");
   const [log, setLog] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  // kp is intentionally NOT in React state: it contains BabyJubJub points as
+  // [bigint, bigint] tuples, and React 19's dev tooling JSON.stringify's
+  // state on each commit. That throws on bigint (despite the toJSON polyfill
+  // in index.html, some library codepaths use replacer functions that bypass
+  // toJSON) and corrupts the scheduler. Keep it in a ref and surface only a
+  // boolean readiness flag.
+  const kpRef = useRef<SenderKeypair | null>(null);
+  const [kpReady, setKpReady] = useState(false);
+  // Re-entry guard for the auto-derive effect.
+  const derivingRef = useRef(false);
 
   const append = useCallback((line: string) => {
     setLog((l) => [`${new Date().toLocaleTimeString()} — ${line}`, ...l].slice(0, 100));
   }, []);
 
+  const fundFromFriendbot = useCallback(async () => {
+    if (!address) return;
+    if ((cfg.network.network ?? "testnet") !== "testnet") {
+      append("friendbot only available on testnet");
+      return;
+    }
+    try {
+      setBusy(true);
+      append(`funding ${address.slice(0, 6)}… via Friendbot`);
+      const res = await fetch(`https://friendbot.stellar.org/?addr=${address}`);
+      if (!res.ok) throw new Error(`friendbot ${res.status}`);
+      append(`✓ account funded — retry your action`);
+    } catch (e) {
+      append(`friendbot failed: ${errorMsg(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  }, [address, append]);
+
+  const setupTrustline = useCallback(async () => {
+    if (!address) return;
+    if (!cfg.asset.issuer) {
+      append(
+        `asset issuer not configured. Re-run \`cd packages/dapp && npm run sync-env\` ` +
+          `with the stellar CLI's "issuer" key in scope.`,
+      );
+      return;
+    }
+    try {
+      setBusy(true);
+      append(`signing ChangeTrust ${cfg.asset.code}:${cfg.asset.issuer.slice(0, 6)}…`);
+      const res = await changeTrust({
+        network: cfg.network.network ?? "testnet",
+        sourceAddress: address,
+        sign,
+        code: cfg.asset.code,
+        issuer: cfg.asset.issuer,
+      });
+      append(
+        res.skipped
+          ? `✓ trustline already exists`
+          : `✓ trustline set (tx ${res.hash.slice(0, 8)}…) — ask operator to send you ${cfg.asset.code}`,
+      );
+    } catch (e) {
+      append(`trustline failed: ${errorMsg(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  }, [address, append, sign]);
+
   const connect = useCallback(async () => {
     await kit.openModal({
       onWalletSelected: async (option) => {
-        kit.setWallet(option.id);
-        const { address: addr } = await kit.getAddress();
-        setAddress(addr);
-        append(`connected: ${addr}`);
+        try {
+          kit.setWallet(option.id);
+          const { address: addr } = await kit.getAddress();
+          // Defer the state update one microtask so we don't update React
+          // state inside the wallet kit's postMessage handler frame.
+          queueMicrotask(() => {
+            setAddress(addr);
+            append(`connected: ${addr}`);
+          });
+        } catch (e) {
+          queueMicrotask(() => append(`connect failed: ${errorMsg(e)}`));
+        }
       },
     });
   }, [kit, append]);
 
   const deriveKey = useCallback(async () => {
     if (!address) return;
+    if (derivingRef.current) return;
+    derivingRef.current = true;
+    setBusy(true);
+    append("signing message to derive BabyJubJub key (this may prompt your wallet)");
     try {
-      setBusy(true);
-      append("signing message to derive BabyJubJub key (this may prompt your wallet)");
       const seed = await deriveBjjSeed(kit, address);
-      const derived = jub.keypairFromSeed(seed);
-      setKp(derived as SenderKeypair);
-      append(
-        `BJJ pubkey: (${derived.publicKey[0].toString().slice(0, 10)}…, ${derived.publicKey[1]
-          .toString()
-          .slice(0, 10)}…)`,
-      );
+      const derived = jub.keypairFromSeed(seed) as SenderKeypair;
+      // Store the bigint-bearing object in a ref, NOT state.
+      kpRef.current = derived;
+      const px = derived.publicKey[0].toString();
+      const py = derived.publicKey[1].toString();
+      append(`BJJ pubkey: (${px.slice(0, 10)}…, ${py.slice(0, 10)}…)`);
+      setKpReady(true);
     } catch (e) {
       append(`key derivation failed: ${errorMsg(e)}`);
     } finally {
+      derivingRef.current = false;
       setBusy(false);
     }
   }, [address, kit, append]);
 
-  // Auto-derive when an address connects.
+  // Auto-derive when an address connects. queueMicrotask escapes the current
+  // React render frame before doing async work that triggers more state
+  // updates via the wallet's postMessage RPCs.
   useEffect(() => {
-    if (address && !kp && !busy) {
-      void deriveKey();
+    if (address && !kpReady && !derivingRef.current) {
+      queueMicrotask(() => {
+        void deriveKey();
+      });
     }
-  }, [address, kp, busy, deriveKey]);
+  }, [address, kpReady, deriveKey]);
 
   return (
     <div style={{ maxWidth: 920, margin: "40px auto", padding: 24 }}>
@@ -89,8 +164,18 @@ export function App() {
             <code style={{ wordBreak: "break-all" }}>{address}</code>
             <small style={{ opacity: 0.6 }}>
               BabyJubJub key{" "}
-              {kp ? "derived ✓" : busy ? "deriving…" : "(click action to derive)"}
+              {kpReady ? "derived ✓" : busy ? "deriving…" : "(click action to derive)"}
             </small>
+            {(cfg.network.network ?? "testnet") === "testnet" && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button onClick={fundFromFriendbot} disabled={busy} style={btn}>
+                  Fund XLM via Friendbot
+                </button>
+                <button onClick={setupTrustline} disabled={busy} style={btn}>
+                  Setup {cfg.asset.code} trustline
+                </button>
+              </div>
+            )}
           </div>
         )}
       </Section>
@@ -112,7 +197,8 @@ export function App() {
         <ActionPanel
           tab={tab}
           address={address}
-          kp={kp}
+          kpRef={kpRef}
+          kpReady={kpReady}
           sign={sign}
           busy={busy}
           setBusy={setBusy}
@@ -145,7 +231,8 @@ export function App() {
 function ActionPanel({
   tab,
   address,
-  kp,
+  kpRef,
+  kpReady,
   sign,
   busy,
   setBusy,
@@ -153,7 +240,10 @@ function ActionPanel({
 }: {
   tab: Tab;
   address: string | null;
-  kp: SenderKeypair | null;
+  // The keypair holds bigints. Kept in a ref to stay out of React state /
+  // DevTools serialization paths.
+  kpRef: React.MutableRefObject<SenderKeypair | null>;
+  kpReady: boolean;
   sign: ReturnType<typeof makeWalletSigner>;
   busy: boolean;
   setBusy: (b: boolean) => void;
@@ -162,10 +252,12 @@ function ActionPanel({
   const [amount, setAmount] = useState("100");
   const [to, setTo] = useState("");
   const [balanceResult, setBalanceResult] = useState<string | null>(null);
-  const ranRef = useRef(false);
 
   if (!address) return <p>Connect Freighter to continue.</p>;
-  if (!kp) return <p>Deriving BabyJubJub key from your Stellar wallet…</p>;
+  if (!kpReady || !kpRef.current) {
+    return <p>Deriving BabyJubJub key from your Stellar wallet…</p>;
+  }
+  const kp = kpRef.current;
 
   const run = async (label: string, fn: () => Promise<void>) => {
     if (busy) return;
@@ -363,9 +455,24 @@ function ContractIds() {
 }
 
 function errorMsg(e: unknown): string {
-  if (e instanceof Error) return e.message;
-  if (typeof e === "string") return e;
-  return String(e);
+  const raw = e instanceof Error ? e.message : typeof e === "string" ? e : String(e);
+  // Friendlier hints for common first-time-user issues.
+  if (raw.includes("Account not found")) {
+    return `${raw} — click "Fund XLM via Friendbot" above to create this account on testnet`;
+  }
+  if (raw.includes("trustline entry is missing")) {
+    return (
+      `${raw} — click "Setup ${cfg.asset.code} trustline" above, then ask the operator ` +
+      `to send you ${cfg.asset.code} via \`scripts/fund-conf.sh <your-address>\``
+    );
+  }
+  if (raw.includes("Error(Contract, #13)")) {
+    return (
+      `${raw} — likely the SAC.transfer step. Most common cause: missing trustline or ` +
+      `insufficient ${cfg.asset.code} balance. Run trustline setup + fund-conf.sh, then retry.`
+    );
+  }
+  return raw;
 }
 
 // ─────────────────────── styles ───────────────────────

@@ -18,6 +18,10 @@ export const cfg: {
     address: string;
     publicKey: Point<bigint>;
   };
+  asset: {
+    code: string;
+    issuer: string;
+  };
   /** URLs for snarkjs circuit artifacts served by Vite from `public/circuits/`. */
   artifacts: {
     registration: { wasm: string; zkey: string };
@@ -43,6 +47,10 @@ export const cfg: {
       BigInt(requiredEnv("VITE_AUDITOR_PK_X")),
       BigInt(requiredEnv("VITE_AUDITOR_PK_Y")),
     ] as Point<bigint>,
+  },
+  asset: {
+    code: (import.meta.env.VITE_ASSET_CODE as string | undefined) ?? "CONF",
+    issuer: (import.meta.env.VITE_ASSET_ISSUER as string | undefined) ?? "",
   },
   artifacts: {
     registration: {

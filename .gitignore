@@ -19,6 +19,9 @@ target/
 # dApp generated assets (copied from EncryptedERC submodule by sync-env.mjs)
 packages/dapp/public/circuits/
 
+# Stray dev-time symlink some scripts created pointing into the submodule
+/circuits
+
 # Redundant agent skill dirs (Cursor uses .cursor/skills and .agents/skills)
 .claude/
 .codex/

@@ -4,6 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Confidential Token — Stellar Demo</title>
+    <script>
+      // Must run BEFORE any module loads. React 19 dev mode JSON.stringify's
+      // component state when logging renders; our state contains BabyJubJub
+      // points as bigint, and BigInt has no default JSON serializer. The
+      // resulting throw mid-commit corrupts React's scheduler ("Should not
+      // already be working" on the next tick). Polyfill BigInt#toJSON
+      // globally so JSON.stringify(123n) returns "123".
+      if (!("toJSON" in BigInt.prototype)) {
+        Object.defineProperty(BigInt.prototype, "toJSON", {
+          value: function () { return this.toString(); },
+          configurable: true,
+          writable: true,
+        });
+      }
+    </script>
     <style>
       body {
         font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
