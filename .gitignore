@@ -22,6 +22,9 @@ packages/dapp/public/circuits/
 # Stray dev-time symlink some scripts created pointing into the submodule
 /circuits
 
+# Vercel CLI link state (per-clone)
+.vercel/
+
 # Redundant agent skill dirs (Cursor uses .cursor/skills and .agents/skills)
 .claude/
 .codex/
