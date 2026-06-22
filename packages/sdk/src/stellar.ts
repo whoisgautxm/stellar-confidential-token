@@ -4,6 +4,7 @@ import {
   Keypair,
   Networks,
   Operation,
+  Transaction,
   TransactionBuilder,
   rpc,
   xdr,
@@ -134,4 +135,118 @@ function sleep(ms: number): Promise<void> {
 
 export function addressToScVal(addr: string): xdr.ScVal {
   return new Address(addr).toScVal();
+}
+
+/**
+ * Sign an assembled Soroban transaction via an external signer (Freighter,
+ * Stellar Wallets Kit, hardware wallet, etc.) and return the signed XDR.
+ *
+ * The signer receives the unsigned XDR string and must return either a signed
+ * XDR string or an object containing `signedTxXdr`. This matches the surface
+ * area exposed by `@creit.tech/stellar-wallets-kit`'s `signTransaction()`.
+ */
+export type SignXdr = (
+  unsignedXdr: string,
+  opts: { networkPassphrase: string; address: string },
+) => Promise<{ signedTxXdr: string } | string>;
+
+/**
+ * Wallet-flavored counterpart to {@link invoke}. Simulates the operation
+ * locally, asks the external signer to sign the assembled transaction, then
+ * submits and waits for finality. Use this from any browser / dApp context
+ * where the user's secret never leaves the wallet extension.
+ */
+export async function invokeWithWallet(
+  cfg: NetworkConfig,
+  sourceAddress: string,
+  signXdr: SignXdr,
+  contractId: string,
+  method: string,
+  args: xdr.ScVal[],
+): Promise<unknown> {
+  const server = getServer(cfg);
+  const account = await server.getAccount(sourceAddress);
+  const passphrase = passphraseFor(cfg);
+
+  const contract = new Contract(contractId);
+  const op = contract.call(method, ...args);
+
+  let tx = new TransactionBuilder(account, {
+    fee: "100000",
+    networkPassphrase: passphrase,
+  })
+    .addOperation(op)
+    .setTimeout(60)
+    .build();
+
+  const sim = await server.simulateTransaction(tx);
+  if (rpc.Api.isSimulationError(sim)) {
+    throw new Error(`simulation failed: ${sim.error}`);
+  }
+  tx = rpc.assembleTransaction(tx, sim).build();
+
+  const signed = await signXdr(tx.toXDR(), {
+    networkPassphrase: passphrase,
+    address: sourceAddress,
+  });
+  const signedXdr = typeof signed === "string" ? signed : signed.signedTxXdr;
+  const signedTx = TransactionBuilder.fromXDR(signedXdr, passphrase) as Transaction;
+
+  const send = await server.sendTransaction(signedTx);
+  if (send.status === "ERROR") {
+    throw new Error(`send failed: ${JSON.stringify(send.errorResult)}`);
+  }
+
+  let attempt = 0;
+  while (attempt < 30) {
+    await sleep(2000);
+    const tr = await server.getTransaction(send.hash);
+    if (tr.status === rpc.Api.GetTransactionStatus.SUCCESS) {
+      if (tr.returnValue) return scValToNative(tr.returnValue);
+      return undefined;
+    }
+    if (tr.status === rpc.Api.GetTransactionStatus.FAILED) {
+      throw new Error(`tx ${send.hash} failed`);
+    }
+    attempt++;
+  }
+  throw new Error(`tx ${send.hash} timed out`);
+}
+
+/**
+ * Read-only contract call: simulates without ever submitting.
+ * Returns the decoded ScVal (or undefined if the method returns void).
+ * Use this for getters like `balance_of`, `get_user_pk`, etc.
+ */
+export async function readContract(
+  cfg: NetworkConfig,
+  sourceAddress: string,
+  contractId: string,
+  method: string,
+  args: xdr.ScVal[],
+): Promise<unknown> {
+  const server = getServer(cfg);
+  const account = await server.getAccount(sourceAddress);
+  const passphrase = passphraseFor(cfg);
+
+  const contract = new Contract(contractId);
+  const op = contract.call(method, ...args);
+
+  const tx = new TransactionBuilder(account, {
+    fee: "100000",
+    networkPassphrase: passphrase,
+  })
+    .addOperation(op)
+    .setTimeout(60)
+    .build();
+
+  const sim = await server.simulateTransaction(tx);
+  if (rpc.Api.isSimulationError(sim)) {
+    throw new Error(`simulation failed: ${sim.error}`);
+  }
+  // simulateTransaction returns the function's return value in result.retval
+  if ("result" in sim && sim.result?.retval) {
+    return scValToNative(sim.result.retval);
+  }
+  return undefined;
 }

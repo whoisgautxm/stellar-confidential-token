@@ -1,92 +1,374 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { jub } from "@confidential-token/sdk";
+import type { StellarWalletsKit } from "@creit.tech/stellar-wallets-kit";
+import { cfg } from "./lib/config.js";
+import { deriveBjjSeed, getKit, makeWalletSigner } from "./lib/wallet.js";
 import {
-  StellarWalletsKit,
-  WalletNetwork,
-  FREIGHTER_ID,
-  allowAllModules,
-} from "@creit.tech/stellar-wallets-kit";
+  type SenderKeypair,
+  deposit,
+  readAndDecryptBalance,
+  register,
+  transfer,
+  withdraw,
+} from "./lib/ctoken.js";
+
+type Tab = "register" | "deposit" | "balance" | "transfer" | "withdraw";
 
 const networkExplorer: Record<string, string> = {
   testnet: "https://stellar.expert/explorer/testnet/contract/",
   mainnet: "https://stellar.expert/explorer/public/contract/",
 };
 
-const ids = {
-  registrar: import.meta.env.VITE_REGISTRAR_ID ?? "",
-  confidentialToken: import.meta.env.VITE_CONFIDENTIAL_TOKEN_ID ?? "",
-  sacToken: import.meta.env.VITE_SAC_ID ?? "",
-};
-
-const kit = new StellarWalletsKit({
-  network: WalletNetwork.TESTNET,
-  selectedWalletId: FREIGHTER_ID,
-  modules: allowAllModules(),
-});
-
 export function App() {
+  const kit = useMemo<StellarWalletsKit>(() => getKit(cfg.network.network ?? "testnet"), []);
+  const sign = useMemo(() => makeWalletSigner(kit), [kit]);
+
   const [address, setAddress] = useState<string | null>(null);
-  const [tab, setTab] = useState<"register" | "deposit" | "transfer" | "withdraw" | "balance">("register");
+  const [kp, setKp] = useState<SenderKeypair | null>(null);
+  const [tab, setTab] = useState<Tab>("register");
   const [log, setLog] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
 
-  function append(line: string) {
-    setLog((l) => [`${new Date().toLocaleTimeString()} — ${line}`, ...l].slice(0, 50));
-  }
+  const append = useCallback((line: string) => {
+    setLog((l) => [`${new Date().toLocaleTimeString()} — ${line}`, ...l].slice(0, 100));
+  }, []);
 
-  async function connect() {
+  const connect = useCallback(async () => {
     await kit.openModal({
       onWalletSelected: async (option) => {
         kit.setWallet(option.id);
-        const { address } = await kit.getAddress();
-        setAddress(address);
-        append(`connected: ${address}`);
+        const { address: addr } = await kit.getAddress();
+        setAddress(addr);
+        append(`connected: ${addr}`);
       },
     });
-  }
+  }, [kit, append]);
+
+  const deriveKey = useCallback(async () => {
+    if (!address) return;
+    try {
+      setBusy(true);
+      append("signing message to derive BabyJubJub key (this may prompt your wallet)");
+      const seed = await deriveBjjSeed(kit, address);
+      const derived = jub.keypairFromSeed(seed);
+      setKp(derived as SenderKeypair);
+      append(
+        `BJJ pubkey: (${derived.publicKey[0].toString().slice(0, 10)}…, ${derived.publicKey[1]
+          .toString()
+          .slice(0, 10)}…)`,
+      );
+    } catch (e) {
+      append(`key derivation failed: ${errorMsg(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  }, [address, kit, append]);
+
+  // Auto-derive when an address connects.
+  useEffect(() => {
+    if (address && !kp && !busy) {
+      void deriveKey();
+    }
+  }, [address, kp, busy, deriveKey]);
 
   return (
-    <div style={{ maxWidth: 880, margin: "40px auto", padding: 24 }}>
+    <div style={{ maxWidth: 920, margin: "40px auto", padding: 24 }}>
       <h1 style={{ marginTop: 0 }}>Confidential Token — Stellar</h1>
       <p style={{ opacity: 0.7 }}>
-        Research prototype. Encrypted balances, public sender/receiver,
-        ZK-proven private transfers. Testnet only.
+        Encrypted balances, public sender/receiver, ZK-proven private
+        transfers and withdraws. Testnet only — not audited.
       </p>
 
-      {!address ? (
-        <button onClick={connect} style={btn}>
-          Connect Freighter
-        </button>
-      ) : (
-        <div style={{ marginBottom: 16 }}>
-          <code>{address}</code>
-        </div>
-      )}
+      <Section title="Wallet">
+        {!address ? (
+          <button onClick={connect} style={btn}>
+            Connect Freighter
+          </button>
+        ) : (
+          <div style={{ display: "grid", gap: 8 }}>
+            <code style={{ wordBreak: "break-all" }}>{address}</code>
+            <small style={{ opacity: 0.6 }}>
+              BabyJubJub key{" "}
+              {kp ? "derived ✓" : busy ? "deriving…" : "(click action to derive)"}
+            </small>
+          </div>
+        )}
+      </Section>
 
-      <nav style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-        {(["register", "deposit", "transfer", "withdraw", "balance"] as const).map((t) => (
+      <nav style={{ display: "flex", gap: 8, margin: "16px 0", flexWrap: "wrap" }}>
+        {(["register", "deposit", "balance", "transfer", "withdraw"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
             style={{ ...btn, opacity: t === tab ? 1 : 0.55 }}
+            disabled={busy}
           >
             {t}
           </button>
         ))}
       </nav>
 
-      <Section title={`Action: ${tab}`}>
-        <ActionPanel tab={tab} address={address} onLog={append} />
+      <Section title={`Action — ${tab}`}>
+        <ActionPanel
+          tab={tab}
+          address={address}
+          kp={kp}
+          sign={sign}
+          busy={busy}
+          setBusy={setBusy}
+          onLog={append}
+        />
       </Section>
 
       <Section title="Contracts">
         <ContractIds />
       </Section>
 
-      <Section title="Log">
+      <Section title="Activity">
         <pre style={pre}>{log.join("\n") || "(no activity yet)"}</pre>
       </Section>
+
+      <footer style={{ opacity: 0.5, fontSize: 12, marginTop: 24 }}>
+        Hackathon prototype. dApp ↔ Soroban via Freighter; circuits served
+        from {`/circuits/*`}. Source: {" "}
+        <a href="https://github.com/whoisgautxm/stellar-confidential-token" target="_blank" rel="noreferrer">
+          repo
+        </a>
+        .
+      </footer>
     </div>
   );
 }
+
+// ─────────────────────── action panel ───────────────────────
+
+function ActionPanel({
+  tab,
+  address,
+  kp,
+  sign,
+  busy,
+  setBusy,
+  onLog,
+}: {
+  tab: Tab;
+  address: string | null;
+  kp: SenderKeypair | null;
+  sign: ReturnType<typeof makeWalletSigner>;
+  busy: boolean;
+  setBusy: (b: boolean) => void;
+  onLog: (s: string) => void;
+}) {
+  const [amount, setAmount] = useState("100");
+  const [to, setTo] = useState("");
+  const [balanceResult, setBalanceResult] = useState<string | null>(null);
+  const ranRef = useRef(false);
+
+  if (!address) return <p>Connect Freighter to continue.</p>;
+  if (!kp) return <p>Deriving BabyJubJub key from your Stellar wallet…</p>;
+
+  const run = async (label: string, fn: () => Promise<void>) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      onLog(`▶ ${label}`);
+      await fn();
+    } catch (e) {
+      onLog(`✗ ${label} failed: ${errorMsg(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const ctxBase = { address, kp, sign, onProgress: onLog };
+
+  switch (tab) {
+    case "register":
+      return (
+        <div style={grid}>
+          <p style={{ opacity: 0.7, fontSize: 13 }}>
+            Publishes your BabyJubJub public key to the registrar, proving
+            knowledge of the matching secret. One-time per Stellar account.
+          </p>
+          <button
+            style={btn}
+            disabled={busy}
+            onClick={() => run("register", () => register(ctxBase))}
+          >
+            Register
+          </button>
+        </div>
+      );
+
+    case "deposit":
+      return (
+        <div style={grid}>
+          <label style={lbl}>Amount (stroops)</label>
+          <input
+            style={input}
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="100"
+          />
+          <button
+            style={btn}
+            disabled={busy}
+            onClick={() =>
+              run(`deposit ${amount}`, () =>
+                deposit({ ...ctxBase, amount: BigInt(amount || "0") }),
+              )
+            }
+          >
+            Deposit
+          </button>
+          <small style={{ opacity: 0.6 }}>
+            Public SAC.transfer in, then homomorphic add of Enc(pk, amount).
+          </small>
+        </div>
+      );
+
+    case "balance":
+      return (
+        <div style={grid}>
+          <button
+            style={btn}
+            disabled={busy}
+            onClick={() =>
+              run("read encrypted balance", async () => {
+                const r = await readAndDecryptBalance(address, kp);
+                if (r.amount === null) {
+                  setBalanceResult("(no balance recorded — deposit first)");
+                  return;
+                }
+                setBalanceResult(
+                  `${r.amount} stroops (${(Number(r.amount) / 1e7).toFixed(7)} CONF) — ` +
+                    `BSGS ${r.bsgsMs} ms — nonce ${r.raw.nonce}`,
+                );
+                onLog(`balance = ${r.amount} stroops (BSGS ${r.bsgsMs} ms)`);
+              })
+            }
+          >
+            Read & decrypt balance
+          </button>
+          {balanceResult && <pre style={pre}>{balanceResult}</pre>}
+        </div>
+      );
+
+    case "transfer":
+      return (
+        <div style={grid}>
+          <label style={lbl}>Recipient Stellar address (G…)</label>
+          <input
+            style={input}
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+            placeholder="GCSOMETHING…"
+          />
+          <label style={lbl}>Amount (stroops)</label>
+          <input
+            style={input}
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="30"
+          />
+          <button
+            style={btn}
+            disabled={busy}
+            onClick={() =>
+              run(`transfer ${amount} → ${to.slice(0, 6)}…`, () =>
+                transfer({
+                  ...ctxBase,
+                  to: to.trim(),
+                  amount: BigInt(amount || "0"),
+                }),
+              )
+            }
+          >
+            Private transfer
+          </button>
+          <small style={{ opacity: 0.6 }}>
+            On-chain tx envelope shows from/to but no amount. Recipient must
+            be registered already.
+          </small>
+        </div>
+      );
+
+    case "withdraw":
+      return (
+        <div style={grid}>
+          <label style={lbl}>Amount (stroops)</label>
+          <input
+            style={input}
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="20"
+          />
+          <button
+            style={btn}
+            disabled={busy}
+            onClick={() =>
+              run(`withdraw ${amount}`, () =>
+                withdraw({ ...ctxBase, amount: BigInt(amount || "0") }),
+              )
+            }
+          >
+            Withdraw to public SAC
+          </button>
+          <small style={{ opacity: 0.6 }}>
+            ZK-proves SenderBalance ≥ amount, then SAC.transfer out and burns
+            the client-supplied EGCT.
+          </small>
+        </div>
+      );
+  }
+}
+
+// ─────────────────────── support components ───────────────────────
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section style={{ marginBottom: 18 }}>
+      <h3 style={{ margin: "10px 0 6px" }}>{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+function ContractIds() {
+  const explorer = networkExplorer[cfg.network.network ?? "testnet"] ?? networkExplorer.testnet;
+  const ids: [string, string][] = [
+    ["confidentialToken", cfg.contracts.confidentialToken],
+    ["registrar", cfg.contracts.registrar],
+    ["sacToken", cfg.contracts.sacToken],
+    ["verifierTransfer", cfg.contracts.verifierTransfer],
+    ["verifierWithdraw", cfg.contracts.verifierWithdraw],
+    ["verifierRegistration", cfg.contracts.verifierRegistration],
+  ];
+  return (
+    <ul style={{ marginTop: 0, paddingLeft: 18 }}>
+      {ids.map(([name, id]) => (
+        <li key={name}>
+          <strong>{name}:</strong>{" "}
+          {id ? (
+            <a href={`${explorer}${id}`} target="_blank" rel="noreferrer">
+              {id.slice(0, 8)}…{id.slice(-6)}
+            </a>
+          ) : (
+            <em style={{ opacity: 0.5 }}>not configured</em>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function errorMsg(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+  return String(e);
+}
+
+// ─────────────────────── styles ───────────────────────
 
 const btn: React.CSSProperties = {
   background: "#1f2a55",
@@ -95,92 +377,8 @@ const btn: React.CSSProperties = {
   borderRadius: 8,
   padding: "8px 14px",
   cursor: "pointer",
+  fontSize: 14,
 };
-
-const pre: React.CSSProperties = {
-  background: "#11193a",
-  padding: 12,
-  borderRadius: 8,
-  overflowX: "auto",
-  fontSize: 12,
-  maxHeight: 240,
-};
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section style={{ marginBottom: 20 }}>
-      <h3 style={{ margin: "8px 0" }}>{title}</h3>
-      {children}
-    </section>
-  );
-}
-
-function ContractIds() {
-  const network = (import.meta.env.VITE_NETWORK as string) ?? "testnet";
-  const explorer = networkExplorer[network] ?? networkExplorer.testnet;
-  return (
-    <ul>
-      {Object.entries(ids).map(([k, v]) =>
-        v ? (
-          <li key={k}>
-            <strong>{k}:</strong>{" "}
-            <a href={`${explorer}${v}`} target="_blank" rel="noreferrer">
-              {v.slice(0, 8)}…{v.slice(-6)}
-            </a>
-          </li>
-        ) : (
-          <li key={k} style={{ opacity: 0.5 }}>
-            {k}: not configured
-          </li>
-        ),
-      )}
-    </ul>
-  );
-}
-
-function ActionPanel({
-  tab,
-  address,
-  onLog,
-}: {
-  tab: string;
-  address: string | null;
-  onLog: (s: string) => void;
-}) {
-  const [amount, setAmount] = useState("100");
-  const [to, setTo] = useState("");
-
-  if (!address) return <p>Connect Freighter to continue.</p>;
-
-  return (
-    <div style={{ display: "grid", gap: 8 }}>
-      {tab !== "register" && tab !== "balance" && (
-        <input
-          placeholder="Amount"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          style={input}
-        />
-      )}
-      {tab === "transfer" && (
-        <input
-          placeholder="Recipient G…"
-          value={to}
-          onChange={(e) => setTo(e.target.value)}
-          style={input}
-        />
-      )}
-      <button style={btn} onClick={() => onLog(`${tab}: queued (witness builder in dev)`)}>
-        {tab}
-      </button>
-      <p style={{ fontSize: 12, opacity: 0.6, marginTop: 6 }}>
-        Demo build — wallet-signed invokes are wired via Stellar Wallets Kit,
-        proof generation runs in-browser via snarkjs. See packages/sdk for full
-        crypto primitives.
-      </p>
-    </div>
-  );
-}
 
 const input: React.CSSProperties = {
   background: "#11193a",
@@ -189,4 +387,25 @@ const input: React.CSSProperties = {
   borderRadius: 8,
   padding: "8px 12px",
   fontSize: 14,
+};
+
+const lbl: React.CSSProperties = {
+  fontSize: 12,
+  opacity: 0.7,
+  marginTop: 4,
+};
+
+const grid: React.CSSProperties = {
+  display: "grid",
+  gap: 8,
+};
+
+const pre: React.CSSProperties = {
+  background: "#11193a",
+  padding: 12,
+  borderRadius: 8,
+  overflowX: "auto",
+  fontSize: 12,
+  maxHeight: 280,
+  margin: 0,
 };

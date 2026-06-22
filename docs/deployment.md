@@ -209,6 +209,32 @@ Final state for the demo recording:
 | alice | 0 | 30 |
 | contract escrow | 80 (was 100) | n/a |
 
+### 6b. (Optional) Run the same flow via the dApp
+
+```bash
+cd packages/dapp
+npm install        # one-time
+npm run dev        # auto-runs sync-env which generates .env from
+                   # packages/sdk/config/testnet.json AND copies the circom
+                   # wasm/zkey artifacts into public/circuits/
+# Open http://localhost:5173 in a browser with Freighter installed on testnet
+```
+
+In the dApp:
+
+1. Click **Connect Freighter** and select your testnet account.
+2. The dApp asks Freighter to sign `confidential-token:v1:<address>` once and
+   caches the derived BabyJubJub keypair in `localStorage`.
+3. Click each tab (register / deposit / balance / transfer / withdraw),
+   fill in amounts, and confirm transactions in Freighter when prompted.
+4. The Activity panel logs every stage (witness, proof generation time,
+   wallet sign request, on-chain submit, BSGS time).
+
+Note: the dApp's BJJ key derivation is not byte-identical to the CLI's
+(Freighter may wrap messages per SEP-43), so use one modality per Stellar
+account. Best practice: dApp for the user/demo flow, CLI for backend
+operations / scripting.
+
 ## 7. Iterating during development
 
 If you only changed code in `confidential-token/contracts/confidential-token/`:

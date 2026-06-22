@@ -16,6 +16,9 @@ target/
 .sac-id
 *.env
 
+# dApp generated assets (copied from EncryptedERC submodule by sync-env.mjs)
+packages/dapp/public/circuits/
+
 # Redundant agent skill dirs (Cursor uses .cursor/skills and .agents/skills)
 .claude/
 .codex/

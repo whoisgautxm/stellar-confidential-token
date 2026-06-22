@@ -8,7 +8,11 @@
     "./jub": "./src/jub.ts",
     "./poseidon": "./src/poseidon.ts",
     "./prover": "./src/prover.ts",
-    "./stellar": "./src/stellar.ts"
+    "./stellar": "./src/stellar.ts",
+    "./balance": "./src/balance.ts",
+    "./transfer": "./src/transfer.ts",
+    "./withdraw": "./src/withdraw.ts",
+    "./constants": "./src/constants.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

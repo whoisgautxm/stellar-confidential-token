@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "sync-env": "node scripts/sync-env.mjs",
+    "predev": "npm run sync-env",
+    "prebuild": "npm run sync-env",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview"
@@ -20,7 +23,9 @@
     "@types/react": "^19.0.4",
     "@types/react-dom": "^19.0.2",
     "@vitejs/plugin-react": "^4.3.4",
+    "tsx": "^4.22.4",
     "typescript": "^5.7.3",
-    "vite": "^6.0.7"
+    "vite": "^6.0.7",
+    "vite-plugin-node-polyfills": "^0.28.0"
   }
 }
