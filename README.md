@@ -56,6 +56,7 @@ stellar-hackathon/
 │   ├── deploy-testnet.sh                  # Build + deploy all 5 contracts
 │   ├── set-auditor.sh                     # Configure auditor + persist its BabyJubJub pk
 │   ├── redeploy-token-only.sh             # Rotate ONLY confidential_token; preserve registrations
+│   ├── fund-conf.sh                       # Operator helper: send CONF to a dApp user's account
 │   └── _derive-pubkey.ts                  # Stellar secret → BabyJubJub pubkey helper
 └── docs/{architecture,deployment,submission}.md
 ```
@@ -85,16 +86,32 @@ npm run typecheck -w @confidential-token/sdk
 npm run typecheck -w @confidential-token/cli
 ```
 
-### dApp (UI scaffold)
+### dApp (full end-to-end via Freighter)
 
 ```bash
 cd packages/dapp
-npm run dev
+npm run dev    # auto-runs sync-env: writes .env from packages/sdk/config/<network>.json
+               # and copies the circom wasm/zkey artifacts into public/circuits/
 ```
 
-Open `http://localhost:5173`, connect Freighter on testnet. The UI scaffold
-shows wallet connection and contract IDs; transfer/withdraw witness builders
-are not yet wired through the dApp — use the CLI for the end-to-end flow.
+Open `http://localhost:5173`, install [Freighter](https://www.freighter.app/),
+switch it to **testnet**. The dApp ships with self-serve onboarding for
+brand-new accounts:
+
+1. **Connect Freighter** → the dApp asks the wallet to sign a deterministic
+   message and derives a BabyJubJub keypair from the signature (cached in
+   `localStorage`).
+2. **Fund XLM via Friendbot** (button under your address) — creates the
+   account on testnet if it doesn't exist yet.
+3. **Setup CONF trustline** (button under your address) — signs a classic
+   `ChangeTrust` op via Freighter so your account can hold CONF.
+4. Ask the operator to send you CONF: `./scripts/fund-conf.sh <your-address> 1000`.
+5. **Register / Deposit / Balance / Transfer / Withdraw** tabs run the
+   matching flows. The Activity panel shows every stage (witness build,
+   Groth16 proof time, wallet sign, on-chain submit, BSGS time).
+
+The dApp uses browser-side snarkjs and `@stellar/stellar-sdk` only — there
+is no backend service. Private keys never leave Freighter.
 
 ## Deploying to testnet
 

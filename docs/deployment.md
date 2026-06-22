@@ -209,31 +209,56 @@ Final state for the demo recording:
 | alice | 0 | 30 |
 | contract escrow | 80 (was 100) | n/a |
 
-### 6b. (Optional) Run the same flow via the dApp
+### 6b. Run the same flow via the dApp (recommended for the demo)
+
+The dApp drives all five eERC operations end-to-end through Freighter — no
+CLI required after the contracts are deployed. Browser snarkjs handles
+Groth16 proving; `@stellar/stellar-sdk` builds the txs; Freighter signs them.
 
 ```bash
 cd packages/dapp
 npm install        # one-time
-npm run dev        # auto-runs sync-env which generates .env from
-                   # packages/sdk/config/testnet.json AND copies the circom
-                   # wasm/zkey artifacts into public/circuits/
+npm run dev        # `predev` runs sync-env: writes .env from
+                   # packages/sdk/config/<network>.json (contract ids,
+                   # auditor pk, CONF asset code + issuer) and copies the
+                   # circom wasm/zkey artifacts into public/circuits/
 # Open http://localhost:5173 in a browser with Freighter installed on testnet
 ```
 
-In the dApp:
+#### Onboarding a brand-new Freighter account
 
-1. Click **Connect Freighter** and select your testnet account.
-2. The dApp asks Freighter to sign `confidential-token:v1:<address>` once and
-   caches the derived BabyJubJub keypair in `localStorage`.
-3. Click each tab (register / deposit / balance / transfer / withdraw),
-   fill in amounts, and confirm transactions in Freighter when prompted.
-4. The Activity panel logs every stage (witness, proof generation time,
-   wallet sign request, on-chain submit, BSGS time).
+A fresh account has no XLM, no CONF trustline, and no CONF balance. The
+dApp self-serves the first two; the operator (you) supplies the third via
+`scripts/fund-conf.sh`.
 
-Note: the dApp's BJJ key derivation is not byte-identical to the CLI's
-(Freighter may wrap messages per SEP-43), so use one modality per Stellar
-account. Best practice: dApp for the user/demo flow, CLI for backend
-operations / scripting.
+1. **Connect Freighter**. The dApp asks the wallet to sign
+   `confidential-token:v1:<address>` once and caches the derived BabyJubJub
+   keypair under `localStorage["ctoken:seed:<address>"]`.
+2. **Fund XLM via Friendbot** (button under your address, testnet only).
+   Creates the Stellar account on testnet by sending it 10k XLM.
+3. **Setup CONF trustline** (button under your address). Builds and signs a
+   classic `ChangeTrust` op via Freighter so the account can hold CONF.
+   Idempotent — clicking on an already-trusting account is a no-op.
+4. Run the operator helper to actually send some CONF:
+   ```bash
+   ./scripts/fund-conf.sh <user's G-address> 1000
+   ```
+   This uses the `distributor` keyring entry created by `issue-test-asset.sh`
+   to send 1000 CONF to the user.
+5. Now the user can hit **Register**, **Deposit**, **Balance**, **Transfer**,
+   **Withdraw**. The Activity panel logs every stage (witness, proof gen
+   time, wallet sign, on-chain submit, BSGS decryption time).
+
+#### Mixed CLI ↔ dApp accounts
+
+The dApp's BJJ key derivation is not byte-identical to the CLI's (Freighter
+wraps the message per SEP-43 before signing). **Pick one modality per
+Stellar account** — re-registering in the other modality after a successful
+register on one will mismatch the on-chain BabyJubJub PK and cause
+`InvalidProof` on every subsequent transfer/withdraw.
+
+Best practice: dApp for end-user / demo flow, CLI for backend operations
+and scripting.
 
 ## 7. Iterating during development
 
@@ -269,6 +294,21 @@ account.
   snapshot and submit. Re-run the command.
 - **`Error(Budget, ExceededLimit)`** — bump `fee` in
   [`packages/sdk/src/stellar.ts`](../packages/sdk/src/stellar.ts) line 96.
+- **`Error(Contract, #13)` on dApp deposit** — almost always the SAC.transfer
+  step failing. Most common causes:
+  - Account not funded with XLM. Use the dApp's **Fund XLM via Friendbot**
+    button, or `stellar keys fund <name> --network testnet`.
+  - Missing CONF trustline. Use the dApp's **Setup CONF trustline** button.
+  - Account has trustline but zero CONF. Run
+    `./scripts/fund-conf.sh <user-address> <amount>`.
+- **dApp shows `Account not found: G…`** — the connected Freighter account
+  has never been created on chain. Click **Fund XLM via Friendbot**.
+- **dApp shows `trustline entry is missing for account`** — click
+  **Setup CONF trustline**, then have the operator run `fund-conf.sh`.
+- **dApp throws `Should not already be working` / `Do not know how to
+  serialize a BigInt`** — only happens if `index.html`'s top-level BigInt
+  toJSON polyfill was edited out. Restore it; it must execute before any
+  module loads.
 - **snarkjs `Assertion failed` during witness gen** — your local plaintext
   balance doesn't match the on-chain EGCT (out-of-date view). The CLI
   always refetches before proof gen, so this is rare.

@@ -31,10 +31,15 @@ a complete CLI demonstrating the full converter round-trip live on testnet.
   using `soroban-verifier-gen`. Anyone with an eERC-style circuit and a
   `verification_key.json` can ship a Stellar deploy of the same scheme in
   minutes.
-- The complete client + on-chain stack is exercised end-to-end on testnet:
-  register, deposit, private transfer, withdraw. Every operation has been
-  observed to land successfully and the encrypted-state transitions have
-  been independently verified by BSGS-decrypting both sides.
+- The complete client + on-chain stack is exercised end-to-end on testnet
+  through **both** modalities: a Node CLI and a browser dApp signing with
+  Freighter. Every operation has been observed to land successfully and
+  the encrypted-state transitions have been independently verified by
+  BSGS-decrypting both sides.
+- The dApp ships **self-serve onboarding** for brand-new Freighter accounts
+  (Friendbot funding + classic `ChangeTrust` signed in-browser), so a
+  reviewer with nothing but Freighter installed can run the full demo
+  without touching the CLI.
 
 ## Architecture in 5 bullets
 
@@ -48,9 +53,10 @@ a complete CLI demonstrating the full converter round-trip live on testnet.
    add of client-encrypted EGCT), private transfer (Groth16 verify + sender
    EGCT sub + receiver EGCT add), and withdraw (Groth16 verify + EGCT sub +
    SAC.transfer out).
-5. **TypeScript SDK + CLI** run the full flow end to end. dApp scaffold
-   handles wallet connection and shows contract ids; witness builders are
-   factored into the SDK and are ready to wire through the dApp.
+5. **TypeScript SDK + CLI + dApp** all run the full flow end to end. The
+   browser dApp uses snarkjs in-page, signs via Freighter, and never reads
+   private key material. The SDK is the shared core; the CLI is a Node
+   front-end and the dApp is a React front-end over the same modules.
 
 ## Stellar-specific design choices
 
@@ -75,8 +81,8 @@ a complete CLI demonstrating the full converter round-trip live on testnet.
 | BabyJubJub Rust crate        | `confidential-token/crates/baby-jubjub/`                   |
 | TypeScript SDK               | `packages/sdk/` — `jub`, `poseidon`, `prover`, `stellar`, `balance`, `transfer`, `withdraw` |
 | Working CLI                  | `packages/cli/` — `register`, `deposit`, `balance`, `transfer`, `withdraw` |
-| Web dApp scaffold            | `packages/dapp/` — wallet connect + contract id display    |
-| Deployment scripts           | `scripts/` — `issue-test-asset`, `deploy-testnet`, `set-auditor`, `redeploy-token-only` |
+| Working web dApp             | `packages/dapp/` — full Freighter-signed flow for all 5 actions + self-serve onboarding (Friendbot, ChangeTrust) |
+| Deployment scripts           | `scripts/` — `issue-test-asset`, `deploy-testnet`, `set-auditor`, `redeploy-token-only`, `fund-conf` |
 | Architecture write-up        | `docs/architecture.md`                                     |
 | Deployment guide             | `docs/deployment.md`                                       |
 | Plan of record               | `.cursor/plans/confidential_token_option_a_c6aa55a1.plan.md` |
@@ -103,52 +109,100 @@ These ids may rotate on subsequent `deploy-testnet.sh` runs — always trust
 
 ## Demo video script
 
-The demo is CLI-driven because the witness builders run cleanly in Node.
-The dApp scaffold is included for wallet integration but the end-to-end
-flow goes through `npx tsx packages/cli/src/commands/...`.
+The recommended demo is **dApp-driven** — it shows that the full
+register/deposit/transfer/withdraw flow runs in a browser with nothing but
+Freighter installed, and that brand-new accounts onboard themselves. Drop
+back to the CLI only to script the operator-side "send CONF" step.
+
+Setup before recording:
 
 ```bash
 cd /Users/gautam/Desktop/stellar-hackathon
+cd packages/dapp && npm run dev    # start the dApp on :5173
+# In a separate browser profile, install Freighter and create a fresh
+# testnet keypair (this is the "user" account for the demo)
 ADMIN=$(stellar keys address admin)
-ALICE=$(stellar keys address alice)
 CT=$(jq -r .confidentialToken packages/sdk/config/testnet.json)
 SAC=$(jq -r .sacToken packages/sdk/config/testnet.json)
 ```
 
-1. **Open StellarExpert in a browser tab** pinned to the
-   `confidentialToken` contract id so viewers can see the on-chain side.
-2. `./scripts/issue-test-asset.sh` (optional — show the CONF SAC contract id
-   landing in `.sac-id`).
-3. `./scripts/deploy-testnet.sh` (optional — show the five contract ids
-   landing in `packages/sdk/config/testnet.json`).
-4. `./scripts/set-auditor.sh` — auditor BabyJubJub pubkey gets persisted to
-   config.
-5. `npx tsx packages/cli/src/commands/register.ts` — show the Groth16 proof
-   generating in ~1 s and `register result: null` on success.
-6. `npx tsx packages/cli/src/commands/deposit.ts 100` — show
-   `deposit result: null`. Then:
-   - `stellar contract invoke --network testnet --source admin --id "$SAC" -- balance --id "$ADMIN"` → 900
-   - `stellar contract invoke --network testnet --source admin --id "$SAC" -- balance --id "$CT"` → 100
-7. `npx tsx packages/cli/src/commands/balance.ts` — show the EGCT struct
-   (large opaque numbers) and the BSGS decode to `100 stroops` in under a
-   second.
-8. Register alice (if not already registered):
-   `STELLAR_SECRET=$(stellar keys secret alice) npx tsx packages/cli/src/commands/register.ts`
-9. **The headline moment**:
-   `npx tsx packages/cli/src/commands/transfer.ts "$ALICE" 30`.
-   - Highlight that the public input to the contract is `(admin, alice,
-     proof, balance_pct)` with no plaintext amount.
-   - Refresh the SAC balance reads — admin is still 900, alice is still 0,
-     contract escrow is still 100. **No public SAC moved.**
-   - Run `balance.ts` for admin (decrypts to 70) and for alice with her
-     secret (decrypts to 30). **The encrypted ledger moved 30 stroops.**
-10. `npx tsx packages/cli/src/commands/withdraw.ts 20` — show admin's SAC
-    jump to 920, contract escrow drop to 80, encrypted balance drop to 50.
-11. **Try to BSGS-decode alice's balance using the admin's secret** — show
-    that it returns garbage (or `dlog not found in range`). Privacy holds.
-12. **Closing line:** "Same eERC circuits, same security model, native
-    Stellar BN254 host crypto — no new trusted setup needed. The full
-    converter round-trip is live on testnet today."
+### Recording
+
+1. **Layout:** dApp at `http://localhost:5173` on the left, StellarExpert
+   pinned to the `confidentialToken` contract id on the right, a terminal
+   docked at the bottom for the operator commands.
+2. **Connect Freighter** — click *Connect Freighter*, select the fresh
+   testnet account. Activity log shows the address.
+3. The dApp prompts Freighter once to **sign the BJJ-seed message** —
+   accept. Activity log: `BJJ pubkey: (…, …)`. Call out that the private
+   key never left Freighter.
+4. **Self-serve onboarding** (the slick part for new users):
+   - Click **Fund XLM via Friendbot** → account is created on testnet.
+   - Click **Setup CONF trustline** → Freighter pops up to sign a classic
+     `ChangeTrust`; accept. Activity log: `✓ trustline set (tx …)`.
+   - In the terminal: `./scripts/fund-conf.sh <user-G-address> 1000`.
+     Operator sends 1000 CONF from the distributor.
+5. **Register** tab → *Register*. Freighter signs the Soroban tx.
+   Highlight the activity log line `proof generated in ~1 s`. After it
+   settles, refresh StellarExpert to show the new tx on the contract.
+6. **Deposit** tab → enter `100` stroops → *Deposit*. Activity log shows
+   `encrypting amount client-side` → `requesting wallet signature` →
+   `deposit confirmed`. In the terminal:
+   ```bash
+   stellar contract invoke --network testnet --source admin --id "$SAC" -- balance --id "<user>" # → 900
+   stellar contract invoke --network testnet --source admin --id "$SAC" -- balance --id "$CT"   # → +100
+   ```
+7. **Balance** tab → *Read & decrypt balance*. Activity log shows the BSGS
+   time (~350 ms). UI displays `100 stroops (0.0000100 CONF)`.
+8. Set up a **second** Freighter account (second browser profile or open
+   Freighter's "switch account" menu, create a new testnet key). Connect
+   it to the dApp in a second browser tab, do steps 3–5 to onboard it as
+   the **recipient** (no need to send CONF — recipients only need the
+   trustline + registration).
+9. **The headline moment — private transfer.** Back in the sender's tab,
+   open **Transfer**, paste the recipient's G-address, enter `30` →
+   *Private transfer*. Activity log shows the 32-signal Groth16 proof
+   generating, then submitted. **Refresh StellarExpert** on the contract
+   call — show that the public inputs are `(sender, recipient, proof,
+   balance_pct)` with **no plaintext amount**.
+10. In the terminal, re-check the public SAC balances:
+    ```bash
+    stellar contract invoke … -- balance --id "<sender>"     # unchanged at 900
+    stellar contract invoke … -- balance --id "<recipient>"  # unchanged at 0
+    stellar contract invoke … -- balance --id "$CT"          # unchanged at 100
+    ```
+    **No public SAC moved.** Then read both encrypted balances in the dApp:
+    sender BSGS-decrypts to `70`, recipient to `30`. **The encrypted
+    ledger moved 30 stroops.**
+11. **Withdraw** in the sender's tab — enter `20` → *Withdraw to public SAC*.
+    Sender's public SAC jumps to 920, contract escrow drops to 80, encrypted
+    balance drops to 50.
+12. **Privacy check.** In the operator terminal, point at the encrypted
+    balance EGCT stored on-chain (`balance.ts`-style read) and emphasise
+    that it's structurally identical between sender and recipient — there
+    is nothing in the EGCT a passive observer can compare against a known
+    amount.
+13. **Closing line:** "Same eERC circuits, same security model, native
+    Stellar BN254 host crypto, no new trusted setup. Full converter
+    round-trip — wallet-signed, browser-proven — live on testnet today."
+
+### CLI fallback script
+
+If you'd rather record the CLI variant (faster to script, no Freighter
+prompts to wait on), the original sequence still works:
+
+```bash
+npx tsx packages/cli/src/commands/register.ts
+npx tsx packages/cli/src/commands/deposit.ts 100
+npx tsx packages/cli/src/commands/balance.ts
+STELLAR_SECRET=$(stellar keys secret alice) \
+  npx tsx packages/cli/src/commands/register.ts
+npx tsx packages/cli/src/commands/transfer.ts "$(stellar keys address alice)" 30
+npx tsx packages/cli/src/commands/balance.ts
+npx tsx packages/cli/src/commands/withdraw.ts 20
+```
+
+Both demos exercise the exact same on-chain contracts.
 
 ## Threat & honesty notes
 
@@ -188,6 +242,8 @@ SECURITY NOTE comment documenting this clearly.
   and entry points on the main contract.
 - ZK upgrade gating for the verifier contracts (admin-multisig).
 - Production-grade trusted setup ceremony for new VKs.
-- Wire the transfer/withdraw witness builders through the dApp via browser
-  snarkjs + Freighter sign + submit. SDK is dApp-ready; only the UI glue is
-  missing.
+- Sponsored trustlines (CAP-33) so the operator can pay the user's reserve
+  cost and onboarding becomes a single Friendbot click instead of two.
+- Better recipient discovery in the dApp transfer flow — currently the user
+  pastes a G-address; ideally the dApp would query the registrar for
+  registered accounts and show a picker.
