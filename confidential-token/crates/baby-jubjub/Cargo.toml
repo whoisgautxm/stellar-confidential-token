@@ -1,0 +1,11 @@
+[package]
+name = "baby-jubjub"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+ff = { version = "0.13", default-features = false, features = ["derive"] }
+
+[dev-dependencies]
+hex = "0.4"

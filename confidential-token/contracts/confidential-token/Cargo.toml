@@ -1,0 +1,17 @@
+[package]
+name = "confidential-token"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+crate-type = ["lib", "cdylib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+baby-jubjub = { workspace = true }
+eerc-types = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }

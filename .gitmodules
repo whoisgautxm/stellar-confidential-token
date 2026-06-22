@@ -1,0 +1,3 @@
+[submodule "EncryptedERC"]
+	path = EncryptedERC
+	url = https://github.com/ava-labs/EncryptedERC.git

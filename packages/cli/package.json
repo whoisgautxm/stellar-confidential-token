@@ -1,0 +1,29 @@
+{
+  "name": "@confidential-token/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "ctoken": "./src/index.ts"
+  },
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "register": "tsx src/commands/register.ts",
+    "deposit": "tsx src/commands/deposit.ts",
+    "transfer": "tsx src/commands/transfer.ts",
+    "withdraw": "tsx src/commands/withdraw.ts",
+    "balance": "tsx src/commands/balance.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@confidential-token/sdk": "*",
+    "@stellar/stellar-sdk": "^14.1.0",
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.7",
+    "poseidon-lite": "^0.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.7",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

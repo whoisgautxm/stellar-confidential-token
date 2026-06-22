@@ -1,0 +1,28 @@
+---
+description: Stellar ZK hackathon development context — use Stellar skills and verify ZK primitive availability before building.
+alwaysApply: true
+---
+
+# Stellar ZK Hackathon
+
+Before building on Stellar, read [skills.stellar.org](https://skills.stellar.org/) for current best practices.
+
+## ZK and privacy work
+
+- Use the **zk-proofs** skill for Groth16 verifiers, BLS12-381, BN254/Poseidon, Noir, RISC Zero, privacy pools, and confidential tokens.
+- Always verify CAP status, target network protocol version, and `soroban-sdk` host-function support before relying on ZK primitives.
+- Treat BN254 and Poseidon as status-sensitive (CAP-0074/0075); confirm availability on the target network.
+
+## Contract development
+
+- Prefer OpenZeppelin Stellar patterns for Soroban contracts (`setup-stellar-contracts`, `upgrade-stellar-contracts`, `develop-secure-contracts`).
+- Use the OpenZeppelin Contracts MCP server when generating fungible, stablecoin, or NFT contracts.
+
+## Documentation
+
+- Reference [docs/llms.txt](docs/llms.txt) for Stellar developer documentation navigation.
+- Key ZK docs: [ZK Proofs on Stellar](https://developers.stellar.org/docs/build/apps/zk), [Privacy on Stellar](https://developers.stellar.org/docs/build/apps/privacy).
+
+## Starter prompt
+
+> Read skills.stellar.org before you start building on Stellar.

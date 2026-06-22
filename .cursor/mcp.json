@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "OpenZeppelinContracts": {
+      "command": "node",
+      "args": ["node_modules/@openzeppelin/contracts-mcp/dist/cli.js"]
+    }
+  }
+}
