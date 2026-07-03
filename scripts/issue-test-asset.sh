@@ -51,7 +51,6 @@ SAC_ID=$(stellar contract asset deploy \
   --asset "${ASSET_CODE}:${ISSUER}" 2> >(grep -v 'A local config was found' >&2) \
   || stellar contract id asset \
     --network "$NETWORK" \
-    --source issuer \
     --asset "${ASSET_CODE}:${ISSUER}")
 
 echo "SAC contract id: $SAC_ID"
